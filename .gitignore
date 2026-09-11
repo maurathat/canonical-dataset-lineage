@@ -1,0 +1,12 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+
+# LaTeX build products; the checked-in PDF is intentional.
+*.aux
+*.log
+*.out
+*.synctex.gz
+*.toc
+

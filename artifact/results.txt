@@ -1,0 +1,21 @@
+TABLE II
+  re-encodings resolving to one identity   7/7   control 3/7
+  parent spellings resolving to one identity 3/3
+  mutations moving the identity             4/4
+  empty values with distinct identities     4/4
+  rejection vectors fired as pinned         21/21 (19 typed reasons)
+  former binary64 aliases refused           2/2
+  carried-address checks                    2/2
+VECTORS 47 checked, 0 failures
+RECEIPT
+  CPython 3.13.3; Unicode 15.1.0
+  rfc8785 0.1.4
+  pydantic 2.13.5
+  pydantic_core 2.46.5
+  annotated-types 0.8.0
+  typing_extensions 4.15.0
+  typing-inspection 0.4.4
+  sha256 48d6ad1c92a292b1979ef05bc3010007ba0120e5da0d3be5f3f4f9b77902eb8d  canon.py
+  sha256 059d58f0d6329c6b90a6169dbc35668cd27e4d92bfe055e1846c4668c4b3ff08  vectors.json
+  sha256 e3d8831bb585ca4612183a3be1964d6483e2b92601daea54f68840d277ead7c6  run.py
+  control: nandatown df0b5f1fd0c2ec2f9535c786fcf83694096e4e9f; records.py sha256 de97b71b1b82b49a10965ff413230d5ca879461d4846e9df586242419c01c8cb

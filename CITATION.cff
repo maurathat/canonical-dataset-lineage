@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use this work, please cite the repository revision and the manuscript."
+title: "Canonical Dataset Lineage for Decentralized Agent Networks"
+type: software
+authors:
+  - family-names: Clark
+    given-names: Maura
+    email: maura@uor.foundation
+version: 0.1.0
+date-released: 2026-09-11
+repository-code: "https://github.com/maurathat/canonical-dataset-lineage"
+
