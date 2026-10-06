@@ -1,0 +1,13 @@
+TABLE I  (digest prefixes, 8 hex characters)
+  encoding                       fingerprint  JCS          NFC->JCS
+  original                       965293f8     965293f8     965293f8 
+  members reordered              965293f8     965293f8     965293f8 
+  integral-valued floats         6332808b*    965293f8     965293f8 
+  "Café" in NFD                 30d12650*    30d12650*    965293f8 
+  * marks a fork: the identifier differs from the original encoding's.
+RECEIPT
+  CPython 3.13.3; Unicode 15.1.0
+  rfc8785 0.1.4
+  sha256 f617a658e785f1dcbb6df52bff70b28c0e981cc2e0431e7e13b15a0342f0f6f9  table1.py
+  fingerprint: nandatown df0b5f1fd0c2ec2f9535c786fcf83694096e4e9f; records.py sha256 de97b71b1b82b49a10965ff413230d5ca879461d4846e9df586242419c01c8cb
+  fingerprint form: records.fingerprint() returns 'sha256:<hex>'; the algorithm label is stripped for display, the digest is unchanged

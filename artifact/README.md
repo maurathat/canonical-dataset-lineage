@@ -12,6 +12,8 @@ This artifact reproduces Table II of the paper. It implements the `dataset.v1` c
 | `run.py` | Checks every vector, enforces the pinned Town commit and `records.py` digest, compares re-encodings with Town's `records.fingerprint` (the control), and prints Table II and a runtime receipt. It exits 1 on any mismatch. |
 | `results.txt` | The recorded run. |
 | `requirements.txt` | Fully pinned dependencies. |
+| `table1.py` | Regenerates Table I of the paper: four encodings of one dataset value, three digest recipes. |
+| `table1-results.txt` | The recorded Table I run, measured against Town's `records.fingerprint`. |
 
 `SHA256SUMS` covers every file in this directory except itself.
 
@@ -25,6 +27,28 @@ TOWN_SRC=nandatown/src python3 run.py
 ```
 
 Without `TOWN_SRC`, the runner checks the vectors but skips the control comparison.
+
+### Table I
+
+    TOWN_SRC=<nandatown>/src python3 table1.py    # fingerprint column measured on Town
+    python3 table1.py                             # fingerprint column computed locally
+
+Reproduces the four encodings and three digest recipes in Table I of the paper.
+Recorded output: `table1-results.txt`. Town's `records.fingerprint()` returns
+`sha256:<hex>`; the algorithm label is stripped for display and the digest is
+unchanged. The local fallback is digest-equivalent to Town's serializer at the
+pinned commit, so Table I reproduces without a Town checkout.
+
+### Maintainer closing reviews (paper reference [5])
+
+The requirements in the paper come from the closing reviews of five closed
+NANDA Town pull requests: #72, #50, #34, #59, #61.
+
+- #72: https://github.com/projnanda/nandatown/pull/72#issuecomment-5544870992
+- #50: https://github.com/projnanda/nandatown/pull/50#issuecomment-5544906629
+- #34: https://github.com/projnanda/nandatown/pull/34#issuecomment-5544918063
+- #59: https://github.com/projnanda/nandatown/pull/59#issuecomment-5544891597
+- #61: https://github.com/projnanda/nandatown/pull/61#issuecomment-5544889492
 
 ## Provenance of the expected values
 
