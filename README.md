@@ -2,12 +2,13 @@
 
 This repository contains the manuscript, reproducibility artifact, and Town proposal for a protocol that gives re-encoded JSON datasets stable canonical identities, typed parent references, owner-bound publication, and receipt-backed freshness.
 
-The measured results cover the standalone canonicalization prototype only. Signing, lineage traversal, freshness, the in-Town implementation, and an external pilot remain proposed work.
+The measured results cover the standalone canonicalization prototype (`artifact/`) and standalone Lab prototypes of signing, lineage traversal, and freshness (`artifact-stages/`). The in-Town implementation and an external pilot remain proposed work.
 
 ## Repository layout
 
 - [`paper/`](paper/) — IEEE-format manuscript source and rendered PDF.
 - [`artifact/`](artifact/) — executable prototype, 47 pinned vectors, recorded results, exact dependencies, and checksums.
+- [`artifact-stages/`](artifact-stages/) — standalone Lab prototypes of signed publication, lineage traversal, and freshness, with 51 pinned vectors; the in-Town implementation remains proposed work.
 - [`proposal/`](proposal/) — the longer Town discussion draft on which the manuscript is based.
 
 ## Reproduce the canonicalization results

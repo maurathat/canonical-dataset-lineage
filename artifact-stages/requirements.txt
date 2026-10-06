@@ -1,0 +1,4 @@
+# Fully pinned; the tested set recorded in results.txt.
+rfc8785==0.1.4
+cbor2==6.1.5
+cryptography==50.0.1

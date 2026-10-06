@@ -1,0 +1,30 @@
+STAGES (standalone prototype, Lab model; not the Town plugin)
+  signed_publication
+    honest publications passing all four checks   3/3
+    forged or damaged statements not passing      10/10
+    publication attempts rejected with a reason   2/2
+  lineage
+    honest walks passing                          7/7
+    faulted walks not passing                     8/8
+    edge states reported                          Cyclic 2, Failed 4, Malformed 1, Unresolved 2, Verified 20
+  freshness
+    outcomes                                      FRESH 4, STALE 5, UNVERIFIED 8
+    vectors matching the outcome they target      17/17
+    inclusion-proof self-test (all index/size<65) 2080/2080
+  controls and limits (expected to show the weakness, not to pass)
+    ctl-replay-non-idempotent-log    FRESH
+    ctl-field-reader                 UNVERIFIED
+    lim-old-head                     FRESH
+VECTORS 51 checked, 0 failures
+RECEIPT
+  CPython 3.13.3; Unicode 15.1.0
+  rfc8785 0.1.4
+  cbor2 6.1.5
+  cryptography 50.0.1
+  sha256 48d6ad1c92a292b1979ef05bc3010007ba0120e5da0d3be5f3f4f9b77902eb8d  canon.py
+  sha256 0218b678f5a17dbf1198048ea7525db840a88dd2be8a6f45fada5eb4b6c85943  statement.py
+  sha256 9925c835755823da0852862fd02417a4d225c79530eeb11169a570b2fc14f8e1  lineage.py
+  sha256 c5e8b29bd7b63c5162d2968dcf698f05ab0c80b24568cff8cb87cd22a143ad6b  tlog.py
+  sha256 55c95919ee5f211cb4e3aa935b2524db27c3ec2d8d2ce2330628f2a3ac490af7  freshness.py
+  sha256 60dc8b7501d36f07409fc6e329c55844a8685ce04ef6fb9ed762b87c9d77982e  vectors.json
+  sha256 62d9e374bc0647d79901f8fb4e81e0d391de1036fbffbc7c2c4dd165d6672b84  run.py
