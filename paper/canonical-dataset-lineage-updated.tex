@@ -1,0 +1,177 @@
+\documentclass[conference]{IEEEtran}
+\usepackage{url}
+\usepackage{amsmath}
+\usepackage[table]{xcolor}
+\usepackage{array}
+\usepackage{booktabs}
+% Visible placeholder for anything that must be filled or verified before submission.
+\newcommand{\TBD}[1]{\textcolor{red}{[TBD: #1]}}
+\def\UrlBreaks{\do\/\do-\do.\do_}
+
+\begin{document}
+
+\title{Canonical Dataset Lineage for\\Decentralized Agent Networks}
+
+% CAMERA-READY: de-anonymized. Affiliation is frozen after acceptance; adding an
+% author or affiliation now requires prior approval from the program chairs.
+\author{\IEEEauthorblockN{Maura Clark}
+\IEEEauthorblockA{Kessai Labs\\
+Napa, CA, USA \\
+maura@kessailabs.com}}
+
+\maketitle
+
+\begin{abstract}
+Agents in decentralized networks re-export, derive, refresh, and hand off datasets. Identifiers computed over serialized bytes fork under these operations: the same logical dataset, re-encoded by a different tool, acquires a new identity, severing its lineage and freshness history. We present a protocol that gives equivalent encodings of a dataset one content-derived identifier, binds each derived dataset to canonical references to its parents, authenticates publication by the dataset's owner, and takes freshness from an append-only transparency log rather than from producer clocks. The protocol combines existing IETF mechanisms for canonicalization, signed statements and transparency services. The requirements come from maintainer reviews of five contributions to NANDA Town, an open testbed for agent protocols. In a standalone prototype, the canonicalization pipeline gives all seven supported re-encoding cases the same identifier, where Town's existing record fingerprint gives the same identifier to only three of the seven. It also rejects all 21 preregistered invalid inputs with the expected error classifications. The measurements cover canonicalization only; signed publication, lineage traversal and freshness have since been exercised in a standalone Lab prototype, and testbed integration remains to be evaluated.
+\end{abstract}
+
+\begin{IEEEkeywords}
+agent networks, provenance, content addressing, canonicalization, transparency logs, SCITT
+\end{IEEEkeywords}
+
+\section{Introduction}
+
+Networked agents do not just exchange messages; they pass data. A procurement agent exports a parts list; a planning agent re-imports it through a different JSON library, derives an assembly plan, and publishes that as a new dataset; an auditor later asks which inputs the plan came from and whether they were current. Each step is routine. Yet if dataset identity is a hash of the bytes each tool happened to emit, every re-encoding mints a new identifier, and lineage, freshness, and any claim bound to the old identifier silently detach. An adversary can exploit the same property deliberately, re-encoding a dataset to break the link to its recorded history.
+
+The pieces exist. RFC 8785 JCS~\cite{rfc8785} fixes key order and number serialization but performs no Unicode normalization, by design, so the composed (NFC) and decomposed (NFD) forms of the same text~\cite{uax15} hash differently. The IETF architecture for supply chain integrity, transparency and trust (SCITT)~\cite{rfc9943} provides signed statements and append-only Transparency Services, and the Canonical Payload Binding (CPB) draft~\cite{cpb03} defines how a payload profile declares a canonicalization, derives an identifier, and cites other artifacts by typed digest reference. We are not aware of a \emph{dataset} profile that combines them to provide an identity that survives re-encoding, parent references a verifier can traverse, ownership bound by signature, and freshness backed by log evidence.
+
+This paper contributes:
+(i)~requirements drawn from what the maintainers of NANDA Town (``Town'')~\cite{town} wrote when they closed five contributions, rather than from first principles;
+(ii)~a dataset profile built on SCITT and CPB that is designed to meet them, running the canonicalization steps in a fixed order and stating exactly which log evidence establishes ordering and freshness;
+(iii)~a test design in which every test case those maintainers kept becomes a check the evaluator reports, alongside a deliberately weak control that must fail; and
+(iv)~measurements from a prototype of the canonicalization step.
+
+\section{Problem and Requirements}
+
+\subsection{Identity forks in practice}
+Town's evidence layer identifies records by \texttt{records.fingerprint}: SHA-256 over JSON with sorted keys and compact separators~\cite{town}. That is the right design for Town: it fingerprints the parsed record model that Town's HMAC signatures cover. It is insufficient, however, as a persistent \emph{dataset} identifier, because datasets are re-encoded as they move between tools. We call two encodings \emph{profile-equivalent} when they differ only in ways the pipeline of \S\ref{sec:canon} absorbs: member order, insignificant whitespace, the spelling of a number, and Unicode normalization form. Table~\ref{tab:forks} shows one dataset in four profile-equivalent encodings. Sorted keys absorb reordering, but integer-to-float re-encoding and Unicode NFD each fork the identifier. JCS eliminates the numeric difference; canonically equivalent Unicode strings additionally require NFC normalization.
+
+\begin{table}[t]
+\caption{One dataset value, \texttt{\{"unit":"kg","rows":[[1,2],[3,4]],"label":"Caf\'e"\}}, in four profile-equivalent encodings; digest prefixes, bold marks a fork. \texttt{fingerprint} is Town's \texttt{records.fingerprint} at \texttt{df0b5f1} (sorted member names, compact separators, UTF-8 emitted directly rather than \texttt{\textbackslash u}-escaped). The columns are digest recipes over a dataset value, not the payload profile of \S\ref{sec:canon}. The integral-valued-float row writes every integer in the value as \texttt{n.0}; regenerated by \texttt{table1.py}~\cite{artifact}.}
+\label{tab:forks}
+\centering\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{l|c|c|c}
+\hline
+Encoding & \texttt{fingerprint} & JCS & NFC$\rightarrow$JCS \\
+\hline
+original & \texttt{965293f8} & \texttt{965293f8} & \texttt{965293f8}\\
+members reordered & \texttt{965293f8} & \texttt{965293f8} & \texttt{965293f8}\\
+integral-valued floats & \textbf{\texttt{6332808b}} & \texttt{965293f8} & \texttt{965293f8}\\
+``Caf\'e'' in NFD & \textbf{\texttt{30d12650}} & \textbf{\texttt{30d12650}} & \texttt{965293f8}\\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Requirements from review}
+We examined maintainer review of five closed 2026 contributions to Town. The maintainers closed them as groundwork for future profiles rather than as defect reports; each closing comment restated requirements and kept test vectors~\cite{prs}. One of the five proposed serialization-invariant data facts, an identifier of the kind this profile specifies; the requirements below come from the closing reviews rather than from that proposal. Three of the five define the dataset contract, which we adopt as requirements:
+\textbf{R1}~re-encodings of the same logical dataset resolve to one identity, and a single leaf mutation changes it;
+\textbf{R2}~empty inputs receive explicit, non-colliding handling;
+\textbf{R3}~one canonical encoding and content-derived identity, with the owner bound by signature;
+\textbf{R4}~parents are independently traversable, supported representations of a parent reference canonicalize to the same value, conflicting ones are rejected, and a parent not bound into the canonical bytes never affects provenance;
+\textbf{R5}~freshness is verified cryptographically, not inferred from field presence, and never depends on a writer's private clock; and
+\textbf{R6}~a dataset type carries publication, lifecycle, verification, and evaluator semantics, with a broken-link control.
+The other two, on interview evidence and on outcome-gated payments, are downstream profiles that compose on this one: a quote binds to a transcript dataset, and an evaluator criterion is committed as a dataset reference.
+
+\subsection{Threat model}
+The adversary may re-encode and republish any dataset, replay old but validly signed statements, present forged or dangling parent references, and claim another party's ownership. It cannot forge an owner's signature or a Transparency Service receipt. Signatures and receipts establish commitment and registration, not truth: a producer can faithfully sign a false dataset, and we do not address that.
+
+\section{Protocol}
+
+\subsection{Canonical identity}\label{sec:canon}
+A \texttt{dataset} payload has four members: \texttt{content}, \texttt{owner}, \texttt{parents}, and \texttt{schema\_version}. Following CPB, the payload class declares exactly one canonicalization algorithm, CPB \texttt{jcs}, preceded by a profile-defined transformation. CPB requires the profile to fix the order of that transformation relative to the removal of excluded fields~\cite{cpb03}; ours is:
+\begin{enumerate}
+\item \emph{Admit and validate} the input bytes: strict UTF-8 without a byte-order mark, well-formed JSON, no duplicate member names after escape decoding, no non-scalar Unicode. Each number token, judged on its decimal spelling before any binary conversion, must be mathematically integral (\texttt{NUMBER\_NOT\_INTEGRAL}) and within $\pm(2^{53}-1)$ (\texttt{NUMBER\_OUT\_OF\_RANGE}).
+\item \emph{Transform the complete payload}: normalize every string and member name to NFC~\cite{uax15}; reject names that collide after normalization; enforce a closed schema, admitting only the four members plus the legacy parent form and the excluded \texttt{address}, with \texttt{owner} a non-empty string and \texttt{schema\_version} \texttt{"1"}; normalize parent representations and set semantics (\S\ref{sec:parents}). Validation precedes exclusion, so excluded fields cannot hide malformed input.
+\item \emph{Exclude} the top-level \texttt{address} member, which carries the identifier itself.
+\item \emph{Apply} RFC 8785 JCS, SHA-256, and lowercase hex.
+\end{enumerate}
+Thus \texttt{1}, \texttt{1.0}, and \texttt{1e0} are one value, as R1 requires, while every non-integral quantity is carried as a string, consistent with I-JSON's advice for exact values~\cite{rfc7493}. No absent-field normalization is applied: \texttt{\{\}}, \texttt{[]}, \texttt{""}, and \texttt{null} are distinct content (R2). A dataset without \texttt{content} is rejected. A record identified by Town's existing fingerprint belongs to a separate artifact type, \texttt{dataset-fingerprint}, with its own declared \emph{digest context}: the algorithm, transformation, and representation under which its digests are computed. CPB permits a digest comparison only under compatible declared contexts, never by equal-looking hexadecimal, so identifiers of the two types are never treated as equivalent~\cite{cpb03}.
+
+\emph{Why integral values only.} Plain JCS admits any IEEE-754 binary64 value and so inherits input rounding~\cite{rfc8785}: our prototype confirmed that \texttt{0.1} and \texttt{0.10000000000000001} would share an identity. Two distinct published decimal values would then be indistinguishable under the identifier, which is the failure a lexical admission boundary prevents; the \texttt{1}$\leftrightarrow$\texttt{1.0} collapse, by contrast, is the intended equivalence. Refusing every decimal-point token avoids the aliasing but also refuses \texttt{1.0}; the UOR Foundation's \texttt{uor-jcs-nfc} context takes that route and renders digests with a \texttt{sha256:} prefix~\cite{uorjcsnfc}. Taking integral \emph{values} in any spelling keeps R1's \texttt{1}$\leftrightarrow$\texttt{1.0} invariance without aliasing. The two contexts stay distinct and are never interchangeable.
+
+\subsection{Typed parent references}\label{sec:parents}
+Each dataset carries canonical references to its parent datasets. We encode them as CPB typed digest references: closed objects carrying exactly \texttt{type: "dataset"}, \texttt{digest\_alg: "SHA-256"}, and a 64-hex \texttt{digest}, with \texttt{purpose} omitted because the type has one digest context. References are carried only in the payload, never also in a \texttt{cpb-refs} header, and are not excluded, so a child's identifier commits to its parents. A legacy single-parent form maps onto the set; equivalent parent representations canonicalize to the same parent set; conflicting or duplicated ones are rejected; the set is sorted, so order never matters. Lineage is computed only from this canonical set, so a parent named anywhere else creates no edge (R4). A verifier resolves each parent by its claimed digest, fetches that dataset, and recomputes its identifier. Each edge is then reported in a CPB reference state~\cite{cpb03}: \emph{Verified} when the recomputed identifier matches, \emph{Failed} when it does not, \emph{Unresolved} when the parent cannot be fetched, \emph{Malformed} when the reference itself is invalid. Because every identifier commits to its parents' identifiers, constructing a valid cycle would require satisfying a circular set of SHA-256 preimage constraints, which we assume computationally infeasible; a revisited identifier therefore indicates an invalid or forged reference, and traversal reports a fifth, profile-defined state, \emph{Cyclic}, and stops. \emph{Malformed} and \emph{Cyclic} are defensive: neither can arise from a payload admitted by \S\ref{sec:canon}. No state other than \emph{Verified} counts as a pass.
+
+\subsection{Signed publication}
+Publication is an RFC 9943 Signed Statement~\cite{rfc9943} (COSE\_Sign1~\cite{rfc9052}) in full-content mode, meaning the dataset itself is the signed payload, with protected \texttt{content\_type} \texttt{application/json}; the CBOR Web Token issuer claim (\texttt{iss}) is the owner and the subject claim (\texttt{sub}) the derived identifier. A declared owner that differs from the issuer is rejected (R3). Verifiers report signature validity, issuer authentication, and content binding separately, and always recompute the identifier: a supplied identifier is never trusted.
+
+\subsection{Receipt-backed freshness}\label{sec:fresh}
+Inclusion does not imply freshness. A verified receipt proves that a statement was registered~\cite{rfc9942}, but not that no newer statement exists, and CPB content binding establishes neither~\cite{cpb03}. The profile therefore keeps three kinds of evidence separate. \emph{Order}: a Transparency Service keeps registered statements in one append-only Statement Sequence~\cite{rfc9943}, and only a verifiable position in it establishes supersession; for example, \texttt{RFC9162\_SHA256} inclusion proofs expose a leaf index and tree size, and consistency proofs to a signed current tree head establish current state~\cite{rfc9162}. \emph{Completeness}: establishing freshness needs an authenticated view of the current log and a complete, auditable way to discover every freshness statement for the (owner, identifier) pair; the current one is then the owner-authenticated statement with the latest verified log position. Replaying an old statement cannot restore freshness, non-owners cannot refresh, and producer timestamps never order anything (R5). Elapsed-time windows additionally require registration time authenticated by the Transparency Service.
+
+\section{Town Case Study and Evaluation Design}
+
+The protocol above is independent of any one platform; we use NANDA Town as the evaluation environment. Town is an open testbed for decentralized agent protocols, with twelve replaceable protocol layers, logical time with no wall clock inside a run, and validators that must judge solely from an exported event log~\cite{town}. The planned integration adds a data-facts plugin, \texttt{dataset.v1}, beside the existing evidence plugin, whose fingerprints stay unchanged. Town's HMAC auth plugin cannot produce third-party-verifiable statements, so an asymmetric signing plugin is required, and in Town's local simulation mode (the Lab) an append-only log stands in for a Transparency Service.
+
+The pilot reuses Town's supply-chain scenario: suppliers publish part datasets, a manufacturer publishes an assembly whose parents are those parts, and an auditor re-encodes, mutates, traverses, replays, and checks freshness. A validator reports eight stages: input validation, canonical identity, mutation sensitivity, empty input, signed publication, lineage, freshness, and controls. The control plugin, \texttt{dataset-fingerprint.v1}, identifies datasets by Town's existing fingerprint and must fail canonical identity; if it passes, the scenario is not exercising re-encoding. All sixteen review vectors retained by the three contract-defining contributions map to a stage; for example, ``stale replay'' is a freshness fault and ``phantom parent'' a lineage fault.
+
+\emph{What is implemented and what is specified.} Two standalone prototypes implement \S\ref{sec:canon}--\ref{sec:fresh} and are exercised against preregistered vectors (Table~\ref{tab:proto};~\cite{artifact}). The Town plugin, its validator and the in-Town control are specified here and not yet built; no measurement is reported for them. We state the boundary explicitly rather than let the protocol's scope stand in for the prototypes'.
+
+\emph{Canonicalization prototype results (not the Town plugin).} The first prototype implements the four-step canonicalization pipeline, including shape checks and parent normalization; we ran it against Town's fingerprint as the control (Table~\ref{tab:proto}). The pipeline produced no forks across seven re-encoding cases (key order, whitespace, \texttt{1.0}, \texttt{1e0}, NFD in a value, NFD in a member name, \verb|\u| escapes); the control forked on four. Reordered parents, a legacy single parent, and two representations denoting the same parent each resolved to one identity; a carried \texttt{address} was excluded and a wrong one detected; every mutation moved the identifier; the four empty values stayed distinct; and all 21 preregistered invalid inputs were rejected with the expected error classifications, nineteen of them distinct. The expected outcomes in Table~\ref{tab:proto} were generated by the same implementation, so they show that the tested refusal paths are reachable and return their expected error classifications, not that the implementation is independently correct; the comparative evidence is the control column, where Town's fingerprint gives one identifier to three of the seven re-encodings. The 47 vectors are provided as exact input bytes with expected outcomes, alongside the prototype and a runtime receipt~\cite{artifact}. A companion paper~\cite{companion} applies this canonicalization to a deployed agent data layer and reports its adoption cost and an agent-runtime study; this paper contributes the profile, the requirements derived from maintainer review, and the prototypes.
+
+A standalone Lab prototype, not the Town plugin, matches all 51 pinned vectors~\cite{artifact}; its owner binding, idempotent log and nonce are Lab-model choices, not protocol rules.
+
+\begin{table}[t]
+\caption{Standalone prototype of the canonicalization pipeline versus Town's fingerprint (control).}
+\label{tab:proto}
+\centering\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{l|c|c}
+\hline
+Check & NFC$\rightarrow$JCS & \texttt{fingerprint}\\
+\hline
+Re-encodings, one identity & 7/7 & 3/7\\
+Parent forms, one identity & 3/3 & ---\\
+Mutations, identity moved & 4/4 & ---\\
+Empty values, distinct ids & 4/4 & ---\\
+Invalid inputs rejected & 21/21 & ---\\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Related Work}
+SCITT~\cite{rfc9943} and Certificate Transparency~\cite{rfc9162} supply signed statements and append-only logs; CPB~\cite{cpb03} supplies the canonicalize-derive-cite construction on which our profile is built. A companion CPB payload profile, the Agent Action Capsule~\cite{aac}, gives an agent's \emph{actions} a signer-independent content identity under the same construction: a Capsule chains to a single prior Capsule and cites external artifacts by typed digest reference. We identify the \emph{datasets} those actions read and write, bind the owner into the identity, and commit a set of parents rather than one. Software supply-chain systems such as in-toto~\cite{intoto} and Sigstore~\cite{sigstore} bind attestations to artifact digests but identify artifacts by bytes, which suits build outputs and fails for structured data re-encoded in transit. Content-addressed storage~\cite{ipfs} identifies data by the bytes its codec emits, so which re-encodings preserve identity follows from the codec rather than from a declared profile. W3C PROV~\cite{prov} gives a lineage vocabulary without canonical identity or verifiable freshness. Agent protocols such as MCP locate resources by URI and signal caching with server-declared TTL hints~\cite{mcp}; NANDA's registry work describes agents and their data facts~\cite{nanda}. Our profile supplies the identity, lineage and freshness semantics those carriers lack and could reference.
+
+\section{Limitations and Open Questions}
+\emph{Numeric cost.} The integral domain removes binary64 aliasing, including the float-spelled \texttt{9007199254740993.0}, which an earlier token-only range check admitted; the cost is that producers must carry every fractional quantity as a string. We treat this as a substantial interoperability cost rather than a free choice: a schema carrying rates, prices or measurements must change to adopt the profile as specified. A future \texttt{schema\_version} could admit a decimal semantic type instead, but only after specifying its lexical-to-mathematical mapping, its canonical representation, its range and precision behavior, and the equivalence relation over it; none of those is settled here. The closed payload shape likewise pushes extensions into \texttt{content} or a new \texttt{schema\_version}.
+
+\emph{Completeness.} Discovering every freshness statement requires a named query, index, or monitor that no single receipt provides, and elapsed-time freshness requires service-authenticated time.
+
+\emph{Scope of evidence.} Our measurements cover the canonicalization pipeline only and come from one implementation; independent reproduction, the in-testbed evaluation, and an external pilot remain future work, and a Town-authored test is not evidence of external adoption.
+
+\emph{Standards status.} CPB is an individual Internet-Draft whose algorithm names are draft-local until RFC publication~\cite{cpb03}.
+
+\section{Conclusion}
+A dataset identifier should survive the re-encodings agents perform, commit to the dataset's inputs, name an owner who signed it, and take its freshness from a log rather than a clock. NFC-then-JCS identity, CPB typed references and SCITT statements are designed to do that, and the profile is small enough to attack in an open testbed. What remains is to run it there.
+
+\section*{Disclosure}
+The author wrote \texttt{uor-jcs-nfc}~\cite{uorjcsnfc}, a related canonicalization context that this profile deliberately does not select; it is cited here as related work and the protocol does not depend on it. The author contributes to the UOR Foundation and founded Kessai Labs; neither organization is a dependency of the protocol, and this is personal research rather than an organizational release. One of the five closed Town contributions discussed in the requirements section, \texttt{sic\_facts}~(\#72), was authored by the author; the requirements adopted here are taken from the maintainers' closing reviews rather than from that contribution.
+
+\section*{AI Disclosure}
+We used Anthropic's Claude to assist with drafting and editing the manuscript and with implementing the prototype and its test vectors; it materially affected all sections and the released artifact. Table~\ref{tab:forks}, Table~\ref{tab:proto} and the vector outcomes were produced by executing the released code; the author verified the correctness and originality of all content, including every reference.
+
+\begin{thebibliography}{99}\scriptsize\raggedright
+\setlength{\itemsep}{0pt}\setlength{\parsep}{0pt}\setlength{\topsep}{0pt}
+\bibitem{rfc8785} A. Rundgren, B. Jordan, and S. Erdtman, ``JSON Canonicalization Scheme (JCS),'' RFC 8785, Jun. 2020.
+\bibitem{rfc9943} H. Birkholz \emph{et al.}, ``An Architecture for Trustworthy and Transparent Digital Supply Chains,'' RFC 9943, Jun. 2026.
+\bibitem{cpb03} S. Mih and A. Sokolov, ``Canonical Payload Binding: A Signed Statement Construction Profile,'' IETF Internet-Draft draft-mih-sokolov-scitt-payload-binding-03, Sep. 2026, work in progress.
+\bibitem{town} Project NANDA, ``NANDA Town,'' \url{https://github.com/projnanda/nandatown}, commit \texttt{df0b5f1fd0c2ec2f9535c786fcf83694096e4e9f}, Sep. 2026.
+\bibitem{prs} Maintainer closing reviews of five closed contributions to NANDA Town, 2026: pull requests \#72, \#50, \#34, \#59 and \#61, \url{https://github.com/projnanda/nandatown}.
+\bibitem{uax15} K. Whistler, ed., ``Unicode Normalization Forms,'' Unicode Standard Annex \#15. \url{https://www.unicode.org/reports/tr15/}
+\bibitem{rfc7493} T. Bray, ``The I-JSON Message Format,'' RFC 7493, Mar. 2015.
+\bibitem{rfc9052} J. Schaad, ``CBOR Object Signing and Encryption (COSE): Structures and Process,'' RFC 9052, Aug. 2022.
+\bibitem{rfc9942} O. Steele \emph{et al.}, ``CBOR Object Signing and Encryption (COSE) Receipts,'' RFC 9942, Jun. 2026.
+\bibitem{rfc9162} B. Laurie, E. Messeri, and R. Stradling, ``Certificate Transparency Version 2.0,'' RFC 9162, Dec. 2021.
+\bibitem{uorjcsnfc} UOR Foundation, ``UOR-JCS-NFC,'' v1.1 draft, 2026. \url{https://github.com/UOR-Foundation/uor-jcs-nfc/blob/303591128094362857791930fdc12b73875d1ff6/SPEC.md}
+\bibitem{intoto} S. Torres-Arias \emph{et al.}, ``in-toto: Providing farm-to-table guarantees for bits and bytes,'' in \emph{Proc. USENIX Security}, 2019.
+\bibitem{sigstore} Z. Newman, J. S. Meyers, and S. Torres-Arias, ``Sigstore: Software signing for everybody,'' in \emph{Proc. ACM CCS}, 2022.
+\bibitem{ipfs} J. Benet, ``IPFS -- Content addressed, versioned, P2P file system,'' arXiv:1407.3561, 2014.
+\bibitem{aac} S. Mih, ``An Agent Action Capsule Profile for SCITT,'' IETF Internet-Draft draft-mih-scitt-agent-action-capsule-04, Aug. 2026, work in progress.
+\bibitem{companion} J. Gao and M. Clark, ``Same Data, Different Bytes: Serialization-Invariant Integrity Checks for Agent-Published Datasets,'' in \emph{Proc. IEEE TPS}, 2026, to appear.
+\bibitem{prov} T. Lebo, S. Sahoo, and D. McGuinness, eds., ``PROV-O: The PROV Ontology,'' W3C Recommendation, Apr. 2013.
+\bibitem{mcp} Model Context Protocol, ``Specification, version 2026-07-28,'' \url{https://modelcontextprotocol.io/specification/2026-07-28}.
+\bibitem{nanda} R. Raskar \emph{et al.}, ``Beyond DNS: Unlocking the Internet of AI Agents via the NANDA Index and Verified AgentFacts,'' arXiv:2507.14263, 2025.
+\bibitem{artifact} M. Clark, ``Canonical Dataset Lineage: Reproducibility Artifact,'' 2026. \url{https://github.com/maurathat/canonical-dataset-lineage/tree/0a68213b2927ce160d366ddef2bff18b094b2add}.
+\end{thebibliography}
+
+\end{document}
